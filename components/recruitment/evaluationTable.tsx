@@ -417,7 +417,11 @@ export const EvaluationTable = ({
     if (!content.trim()) return;
     setLoadingId(userFlowId);
     try {
-      await reopenAndEvaluate(userFlowId, content, meetingLink);
+      const result = await reopenAndEvaluate(userFlowId, content, meetingLink);
+      if (!result.success) {
+        toast.error(result.error?.message ?? "操作失败");
+        return;
+      }
       toast.success("面评已提交，等待管理员审核");
       cancelEdit();
       onRefresh();

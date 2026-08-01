@@ -58,6 +58,7 @@ const actionLabels: Record<string, string> = {
   "evaluation.reopen_and_create": "重开并创建面评",
   "evaluation.approve": "通过面评",
   "evaluation.reject": "驳回面评",
+  "evaluation.unapprove": "撤销通过",
   "evaluation.reopen": "重开面评",
 };
 

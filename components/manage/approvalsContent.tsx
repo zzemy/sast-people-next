@@ -10,6 +10,7 @@ import {
   approveEvaluation,
   rejectEvaluation,
   reopenEvaluation,
+  unapproveEvaluation,
 } from "@/action/user-flow/evaluation";
 import type { InferSelectModel } from "drizzle-orm";
 import type { interviewEvaluation } from "@/db/schema";
@@ -114,6 +115,25 @@ export const ApprovalsContent = ({
         prev.map((e) =>
           e.evaluation.id === id
             ? { ...e, evaluation: { ...e.evaluation, status: "rejected" } }
+            : e,
+        ),
+      );
+    } catch {
+      toast.error("操作失败");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnapprove = async (id: number) => {
+    setActionLoading(id);
+    try {
+      await unapproveEvaluation(id);
+      toast.success("已撤销通过，退回待审");
+      setEvaluations((prev) =>
+        prev.map((e) =>
+          e.evaluation.id === id
+            ? { ...e, evaluation: { ...e.evaluation, status: "submitted" } }
             : e,
         ),
       );
@@ -287,9 +307,9 @@ export const ApprovalsContent = ({
                   {row.evaluation.status === "approved" && (
                     <Button
                       size="sm"
-                      variant="destructive"
+                      variant="secondary"
                       className="w-full sm:w-auto"
-                      onClick={() => handleReject(row.evaluation.id)}
+                      onClick={() => handleUnapprove(row.evaluation.id)}
                       loading={actionLoading === row.evaluation.id}
                     >
                       撤销通过
