@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -537,6 +544,14 @@ function ActionCell({
   align?: "start" | "end";
   onAction: (action: InterviewAction, candidate: Candidate) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Radix opens a menu from the trigger's `pointerdown`, and on touch that is the
+  // instant a finger lands: a swipe that merely started on the button opened the
+  // menu mid-scroll, and an open menu holds the page until it is dismissed. The
+  // wrapper below swallows that press, so the click a real tap produces is what
+  // decides the outcome — from where the menu stood before the press, so a
+  // dismissal landing between the two cannot flip the tap back into an open.
+  const menuOpenOnPressRef = useRef(false);
   const actions = [
     ...(plan.primary ? [plan.primary] : []),
     ...plan.overflow,
@@ -557,24 +572,38 @@ function ActionCell({
   return (
     // Click only. Opening on hover was tried and reverted: every row has a menu,
     // so dragging the pointer across the table opened them in a cascade, and any
-    // delay short enough to feel responsive fired during a normal sweep.
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-slot="row-action-menu"
-          disabled={busy}
-          className={cn(
-            ACTION_MENU_BUTTON,
-            // The tone follows the primary only: a row whose sole option is a
-            // destructive one should not advertise itself in red.
-            plan.primary ? actionTone(plan.primary) : ACTION_TONE.logistics,
-          )}
-        >
-          <span className="truncate">{plan.primary?.label ?? "操作"}</span>
-          <ChevronDown className="size-3 shrink-0 opacity-60" aria-hidden="true" />
-        </button>
-      </DropdownMenuTrigger>
+    // delay short enough to feel responsive fired during a normal sweep. The press
+    // is left out for the same reason — a tap decides, a swipe does not.
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+      {/* The press has to be stopped ahead of the trigger, and React can only do
+          that from an ancestor: a capture handler on the target itself runs in the
+          same pass as the target's own handler. `contents` keeps the wrapper out
+          of the layout. */}
+      <span
+        className="contents"
+        onPointerDownCapture={(event) => {
+          event.stopPropagation();
+          menuOpenOnPressRef.current = menuOpen;
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            data-slot="row-action-menu"
+            disabled={busy}
+            onClick={() => setMenuOpen(!menuOpenOnPressRef.current)}
+            className={cn(
+              ACTION_MENU_BUTTON,
+              // The tone follows the primary only: a row whose sole option is a
+              // destructive one should not advertise itself in red.
+              plan.primary ? actionTone(plan.primary) : ACTION_TONE.logistics,
+            )}
+          >
+            <span className="truncate">{plan.primary?.label ?? "操作"}</span>
+            <ChevronDown className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+          </button>
+        </DropdownMenuTrigger>
+      </span>
       <DropdownMenuContent
         align={align === "start" ? "start" : "end"}
         className="w-44"
