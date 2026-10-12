@@ -112,6 +112,8 @@ jobs:
           set -uo pipefail
           # 只管清理，绝不因为注册表不给删就把部署拦下来：删不掉的都记到日志/告警里
           REGISTRY="${{ env.TCR_HOST }}"
+          # 必须带协议：TCR_HOST 只是域名，少了 https:// 的话 curl 会走 80 端口、拿到 308 重定向页而不是 JSON
+          REGISTRY_URL="https://$REGISTRY"
           REPO="${{ env.TCR_NAMESPACE }}/${{ env.SERVICE_NAME }}"
           KEEP="${{ env.TAG_RETENTION_COMMITS }}"
           TMP_DIR="${RUNNER_TEMP:-/tmp}"
@@ -124,10 +126,14 @@ jobs:
           # token 服务地址与 service 名从注册表自己的 401 challenge 里读：TCR 是
           # realm=/service/token、service=token-service（写死 service=registry 会被拒），
           # 而且 scope 要带 push（实测只请求 pull 会 401）。
-          challenge=$(curl -sI "$REGISTRY/v2/" | tr -d '\r' | awk 'tolower($1) == "www-authenticate:" { sub(/^[^ ]+[ ]+/, ""); print; exit }')
+          challenge=$(curl -sI "$REGISTRY_URL/v2/" | tr -d '\r' | awk 'tolower($1) == "www-authenticate:" { sub(/^[^ ]+[ ]+/, ""); print; exit }')
           realm=$(printf '%s' "$challenge" | sed -n 's/.*realm="\([^"]*\)".*/\1/p')
           service=$(printf '%s' "$challenge" | sed -n 's/.*service="\([^"]*\)".*/\1/p')
-          [ -n "$realm" ] || realm="$REGISTRY/service/token"
+          case "$realm" in
+            https://*) ;;
+            "") realm="$REGISTRY_URL/service/token" ;;
+            *) realm="https://$realm" ;;
+          esac
           [ -n "$service" ] || service=token-service
           token_url="$realm?service=$service&scope=repository:${REPO}:pull,push,delete"
 
@@ -144,7 +150,7 @@ jobs:
           fi
 
           list_status=$(curl -sS -o "$TMP_DIR/tags.json" -w '%{http_code}' \
-            -H "Authorization: Bearer $TOKEN" "$REGISTRY/v2/$REPO/tags/list" 2>/dev/null || echo 000)
+            -H "Authorization: Bearer $TOKEN" "$REGISTRY_URL/v2/$REPO/tags/list" 2>/dev/null || echo 000)
           if [ "$list_status" != "200" ]; then
             echo "::warning::列不出 TCR tag 列表（HTTP ${list_status}），跳过清理"
             head -c 400 "$TMP_DIR/tags.json" 2>/dev/null || true
@@ -182,7 +188,7 @@ jobs:
                 -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
                 -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
                 -H "Accept: application/vnd.oci.image.index.v1+json" \
-                "$REGISTRY/v2/$REPO/manifests/$keep_tag"); then
+                "$REGISTRY_URL/v2/$REPO/manifests/$keep_tag"); then
               keep_headers=""
             fi
             keep_digest=$(printf '%s\n' "$keep_headers" \
@@ -205,7 +211,7 @@ jobs:
                 -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
                 -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
                 -H "Accept: application/vnd.oci.image.index.v1+json" \
-                "$REGISTRY/v2/$REPO/manifests/$tag"); then
+                "$REGISTRY_URL/v2/$REPO/manifests/$tag"); then
               headers=""
             fi
             digest=$(printf '%s\n' "$headers" \
@@ -227,7 +233,7 @@ jobs:
 
             delete_status=$(curl -sS -o "$TMP_DIR/delete.json" -w '%{http_code}' -X DELETE \
               -H "Authorization: Bearer $TOKEN" \
-              "$REGISTRY/v2/$REPO/manifests/$digest" 2>/dev/null || echo 000)
+              "$REGISTRY_URL/v2/$REPO/manifests/$digest" 2>/dev/null || echo 000)
             case "$delete_status" in
               2*)
                 echo "  已删除旧 tag $tag"
@@ -248,7 +254,7 @@ jobs:
           done < "$TMP_DIR/tags.txt"
 
           remaining_status=$(curl -sS -o "$TMP_DIR/tags-after.json" -w '%{http_code}' \
-            -H "Authorization: Bearer $TOKEN" "$REGISTRY/v2/$REPO/tags/list" 2>/dev/null || echo 000)
+            -H "Authorization: Bearer $TOKEN" "$REGISTRY_URL/v2/$REPO/tags/list" 2>/dev/null || echo 000)
           remaining=$(node -e 'const fs=require("fs");try{process.stdout.write(String((JSON.parse(fs.readFileSync(process.argv[1],"utf8")).tags||[]).length))}catch{process.stdout.write("")}' "$TMP_DIR/tags-after.json" 2>/dev/null || true)
           [ -n "$remaining" ] || remaining="?"
           echo "TCR tag：删除 ${removed} 个、保留 ${kept} 个、读不到 manifest ${gone} 个、失败 ${failed} 个；现有 ${remaining} 个（HTTP ${remaining_status}，上限 100）"

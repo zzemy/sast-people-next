@@ -85,7 +85,7 @@ TCR 个人版每个仓库上限 **100 个 tag**，而应用镜像每次部署都
 
 Registry v2 的 `DELETE /manifests/<digest>` 会把指向同一个 manifest 的**所有** tag 一起删掉，而内容没变的构建（例如只改文档的 commit）会与上一个 commit 共用 digest，所以只按 tag 名判重会误删保留窗口里的 tag——脚本会先取出保留窗口那些 tag 的 digest，候选 digest 命中就跳过。唯一的例外是固定 tag `migrator`：它每次部署都会被重新推上来，而历史上那批 `<sha>-migrator` 大多与它共用 digest，保护它等于让那些旧 tag 永远删不掉，所以它不参与这层保护（这个 tag 被连带删掉时，同一次运行的后续推送会立刻把它建回来）。
 
-清理拿不到 token / 列不出列表 / 单个删除失败时只打 `::warning::` 并继续部署；只有清理后仍有 100 个（下一个 tag 必然推不上去）才 `::error::` 终止，提示去 TCR 控制台清理或升级套餐。token 服务不是写死的：脚本先请求 `/v2/` 读注册表返回的 401 challenge，从中取 `realm` 与 `service`（TCR 个人版实际是 `realm=/service/token`、`service=token-service`，写死成 `service=registry` 会被拒），并用 `scope=repository:<ns>/<repo>:pull,push,delete` 取 token（实测只请求 `pull` 会 401；注册表的 401 明细写明删除要 `Action: delete`）。这些调用失败时会把 HTTP 状态与响应前 400 字节打进日志，便于定位。
+清理拿不到 token / 列不出列表 / 单个删除失败时只打 `::warning::` 并继续部署；只有清理后仍有 100 个（下一个 tag 必然推不上去）才 `::error::` 终止，提示去 TCR 控制台清理或升级套餐。token 服务不是写死的：脚本先请求 `/v2/` 读注册表返回的 401 challenge（注册表与 token 服务都必须用 `https://` 访问——`TCR_HOST` 只是域名，少了协议头 curl 会走 80 端口拿到 308 重定向页而不是 JSON），从中取 `realm` 与 `service`（TCR 个人版实际是 `realm=/service/token`、`service=token-service`，写死成 `service=registry` 会被拒），并用 `scope=repository:<ns>/<repo>:pull,push,delete` 取 token（实测只请求 `pull` 会 401；注册表的 401 明细写明删除要 `Action: delete`）。这些调用失败时会把 HTTP 状态与响应前 400 字节打进日志，便于定位。
 
 部署过程中还会打上服务器本地滚动标签，`docker-compose.yml` 使用 `:current`：
 - `current` — 当前运行版本
